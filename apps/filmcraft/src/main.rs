@@ -526,6 +526,9 @@ fn app_creator(
         if let Some(p) = project {
             if let Err(e) = session.execute("file.open", json!({"path": p})) {
                 log::error!("{e}");
+                // A project named on the command line that cannot be opened is said in the window,
+                // not only in the log.
+                session.toast(format!("Could not open the project: {e}"));
             }
         } else if !startup_flag && session.prefs.general.at_startup == "openMostRecent" {
             // Settings ▸ General ▸ At Startup ▸ Open Most Recent

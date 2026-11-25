@@ -5354,7 +5354,10 @@ fn write_project(s: &mut Session, path: &str, adopt: bool) -> Result<Value> {
     }
     // what is open (sequence tabs, how each is shown) goes into the file beside the project
     let view = s.project_view();
-    let bytes = filmcraft_format::encode_with_view(&s.project, Some(&view), false);
+    // media inside the project's folder are saved relative to the project file, so the folder can
+    // move between drives and operating systems with no relinking (`portable_paths`)
+    let portable = crate::portable_paths::for_document(&s.project, &s.media, std::path::Path::new(path));
+    let bytes = filmcraft_format::encode_with_view(&portable, Some(&view), false);
     let mut backup = None;
     if adopt && s.path.as_deref() == Some(path) && s.loaded_schema < filmcraft_format::SCHEMA_VERSION {
         let b = schema_backup_path(path, s.loaded_schema);
@@ -5388,6 +5391,10 @@ pub(crate) fn install_project(s: &mut Session, mut proj: filmcraft_project::Proj
     s.media.set_use_proxies(proxies);
     s.offline = Default::default();
     let first = proj.sequences().next().map(|i| i.id);
+    // media saved relative to the project file are taken from its folder (`portable_paths`)
+    if let Some(document) = &path {
+        crate::portable_paths::absolutize_stored(&mut proj, std::path::Path::new(document));
+    }
     s.media.add_stored(&proj, path.as_deref());
     // Projects saved before stills applied EXIF Orientation keep a portrait still's
     // unturned size and the anchors baked from it (#4613).

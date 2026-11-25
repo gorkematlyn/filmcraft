@@ -65,6 +65,7 @@ pub mod links;
 pub mod menus;
 pub mod native_dialogs;
 pub mod notices;
+pub mod os_open;
 pub mod os_window;
 pub mod panels;
 pub mod perf;

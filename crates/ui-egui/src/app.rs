@@ -379,6 +379,7 @@ impl FilmcraftApp {
             self.sync_timeline_view();
             panels::metadata::follow_selection(self);
             self.handle_drops(&ctx);
+            self.handle_os_open_requests(&ctx);
             self.begin_press(&ctx);
             self.latch_escape_cancel(&ctx);
             self.handle_shortcuts(&ctx);

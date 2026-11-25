@@ -453,17 +453,33 @@ pub fn auto_relink(s: &mut Session, p: &Value) -> Result<Value> {
         let index = index_folder(Path::new(folder), 20_000);
         for m in &missing {
             let key = m.file_name.to_ascii_lowercase();
-            let mut best: Option<Candidate> = None;
+            let mut found: Vec<Candidate> = Vec::new();
             for cand in index.get(&key).into_iter().flatten() {
                 if let Ok(c) = check_candidate(s, ItemId(m.item), &cand.to_string_lossy(), &o)
                     && c.ok
-                    && best.as_ref().is_none_or(|b| c.score > b.score)
                 {
-                    best = Some(c);
+                    found.push(c);
                 }
             }
-            match best {
+            // Several files of this name pass the checks: link one only when the recorded
+            // fingerprint singles it out. Never a silent pick between look-alikes.
+            let chosen = if found.len() > 1 {
+                let mut same = found.iter().filter(|c| c.identity_match == Some(true));
+                match (same.next(), same.next()) {
+                    (Some(c), None) => Some(c.clone()),
+                    _ => None,
+                }
+            } else {
+                found.first().cloned()
+            };
+            match chosen {
                 Some(c) => plans.push(Plan { item: ItemId(m.item), cand: c }),
+                None if found.len() > 1 => failed.push(json!({
+                    "item": m.item,
+                    "path": m.path,
+                    "problems": [format!("{} files of this name match; link the right one with Link Media", found.len())],
+                    "candidates": found.iter().map(|c| c.path.clone()).collect::<Vec<_>>(),
+                })),
                 None => failed.push(json!({"item": m.item, "path": m.path, "problems": ["no matching file found"]})),
             }
         }
@@ -791,9 +807,51 @@ fn offline_all(s: &mut Session, _: &Value) -> Result<Value> {
     Ok(json!({"offline": s.offline.missing.iter().map(|i| i.0).collect::<Vec<_>>()}))
 }
 
+/// A project that was carried to another computer together with its media still names the old
+/// computer's absolute paths (projects saved before media inside the project folder were saved
+/// relative). For each missing file, look under the project's own folder for the same trailing
+/// folders (`portable_paths::locate_beside`) and link it as one undo step when the file is a safe
+/// match: it passes the usual Link Media checks (name, extension, duration, metadata, fingerprint)
+/// and, when it sits directly in the folder with no folder structure to confirm it, its fingerprint
+/// matches. Nothing is guessed from a bare file name, so two files of the same name are never mixed
+/// up; what is left stays missing for Link Media. Returns how many items were linked.
+fn link_beside_project(s: &mut Session, list: &[Missing]) -> usize {
+    if cfg!(target_arch = "wasm32") {
+        return 0;
+    }
+    let Some(folder) = s.path.as_deref().and_then(|p| std::path::absolute(p).ok()).and_then(|p| p.parent().map(Path::to_path_buf)) else { return 0 };
+    let o = MatchOptions::default();
+    let mut plans = Vec::new();
+    for m in list.iter().filter(|m| m.status == "missing") {
+        // A path on a network share or a URL is refused on purpose; it is not looked for here.
+        if matches!(s.media.follow(&m.path), Err(crate::doc_path::NotFollowed::Refused(r)) if r != crate::doc_path::Refused::Invalid) {
+            continue;
+        }
+        let Some((found, depth)) = crate::portable_paths::locate_beside(&m.path, &folder, |p| p.to_str().is_some_and(|f| s.services.file_size(f).is_ok()))
+        else {
+            continue;
+        };
+        let Some(found) = found.to_str() else { continue };
+        let Ok(c) = check_candidate(s, ItemId(m.item), found, &o) else { continue };
+        let confirmed = depth > 1 || c.identity_match == Some(true);
+        if c.ok && confirmed {
+            plans.push(Plan { item: ItemId(m.item), cand: c });
+        }
+    }
+    let n = plans.len();
+    if n > 0 && apply(s, plans, false, "Link Media").is_ok() {
+        s.toast(format!("Linked {n} media file(s) found beside the project"));
+        return n;
+    }
+    0
+}
+
 /// After a project opens: find missing files and ask for them.
 pub fn on_open(s: &mut Session) -> usize {
-    let list = refresh(s);
+    let mut list = refresh(s);
+    if link_beside_project(s, &list) > 0 {
+        list = refresh(s);
+    }
     let refused: Vec<String> =
         list.iter().filter(|m| m.status == "missing").filter_map(|m| s.media.follow(&m.path).err().map(|why| format!("{} ({why})", m.path))).collect();
     if !refused.is_empty() {

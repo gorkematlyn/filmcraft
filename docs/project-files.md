@@ -122,6 +122,21 @@ then asks *"Save changes to 'X' before closing?"* with **Cancel**, **Don't Save*
 the chosen project opens after Save or Don't Save. File ▸ Open Recent and the Recent list on Home
 ask the same way.
 
+Every way in reaches the same loader, `file.open` (`open_project` in `crates/engine/src/commands.rs`),
+and so the same decoder and checks: the Open dialog and ⌘O, Open Recent, a project dropped on the
+window, a project named on the command line (Windows and Linux file associations start FilmCraft
+that way; a project that cannot be opened is also shown in the window, not only logged), and the
+control channel, CLI and MCP. A request from the OS to a running app goes through
+`filmcraft_ui_egui::os_open::request`.
+
+macOS does not start FilmCraft with the file on its command line: a double-click or Open With in
+the Finder sends an "open documents" event (`application:openURLs:`) to the app's delegate. The
+bundle declares the `.fcproj` type (`packaging/macos/Info.plist.in`), but the delegate that winit
+installs does not implement that method, so AppKit refuses the document and the Finder shows an
+error, while ⌘O, which never leaves the app, works. Until the host listens for the event and calls
+`os_open::request`, open a project from FilmCraft (⌘O, Open Recent) or drop it on the window or
+the Dock icon's window.
+
 ## Auto Save
 
 Preferences ▸ Auto Save (Edit ▸ Preferences ▸ Auto Save…, ⌘,; FilmCraft ▸ Settings… on macOS) works
@@ -311,6 +326,33 @@ have no identity, so relinking them skips the fingerprint check.
   computer, a device) count as missing: the item shows the offline slate, the open says why, and
   the Link Media dialog lists it. A file imported or linked in this session is opened as given.
 
+### Portable projects
+
+A project saved with media inside its own folder is portable between folders, drives, macOS and
+Windows (`crates/engine/src/portable_paths.rs`):
+
+- **Save, Save As, Save a Copy and Project Manager** write a media or proxy file that lies inside
+  the project file's folder as a path **relative to the project file**, always with `/`
+  (`Assets/Videos/a.mp4`; Windows and macOS both read it). A file elsewhere keeps its absolute
+  path, as before. A name that holds `\`, `/` or `:` is not portable and stays absolute. The open
+  session keeps its own paths; only the file written changes.
+- **Save As** resolves every path first (a relative one from the folder the project was opened
+  from), then writes it relative to the new folder when it lies inside it and absolute when not,
+  so no link is lost whichever way the project moves.
+- **Project Manager ▸ Collect / Consolidate** puts the copied media beside the new project file,
+  and the new project refers to it relatively: the destination folder moves to another drive or
+  operating system with no relinking.
+- **Older projects** hold absolute paths. When such a path names no file here (another computer's
+  `C:\Users\me\Film\Assets\a.mp4`), opening looks for the same trailing folders under the
+  project's folder (`Assets/a.mp4`, longest match first) and links the file as one undo step
+  ("Link Media") when it passes the Link Media checks and, for a file directly in the project
+  folder with no structure to confirm it, its fingerprint matches. A file of the same name in
+  another folder is never taken for it: those stay offline for Link Media. Saving then writes
+  the portable form.
+- `media.autoRelink {folder}` links a file only when one candidate passes the checks, or when the
+  recorded fingerprint singles one out. Look-alikes are listed under `failed[].candidates` and
+  left offline.
+
 ### Link Media
 
 | Command | |
@@ -441,7 +483,8 @@ stays attached to its corresponding take.
   without writing anything.
 
 The copy runs as a job. The project file (`<destination>/<name>.fcproj`) is written last, with the
-new paths and fingerprints, so it opens with no missing media.
+new fingerprints and the new media paths relative to the project file (see Portable projects), so it
+opens with no missing media wherever the folder is moved to.
 
 Dialog ids: `pm.seq.<id>`, `pm.mode.<collect|consolidate>`, `pm.preset.<id>`, `pm.excludeUnused`,
 `pm.handles`, `pm.includeProxies`, `pm.includePreviews`, `pm.destination`, `pm.browse`,

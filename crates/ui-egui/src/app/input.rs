@@ -37,6 +37,24 @@ impl FilmcraftApp {
         }
     }
 
+    /// Open the files the OS asked the running app to open (`os_open`): the Finder's double-click
+    /// and Open With on macOS. A project goes through `file.open`, the one loader File ▸ Open, the
+    /// command line and the control channel use. A file that is not there is said, not skipped.
+    pub(super) fn handle_os_open_requests(&mut self, ctx: &egui::Context) {
+        crate::os_open::follow(ctx);
+        let paths = crate::os_open::take();
+        if paths.is_empty() {
+            return;
+        }
+        let (found, missing): (Vec<String>, Vec<String>) = paths.into_iter().partition(|p| std::path::Path::new(p).exists());
+        if let Some(first) = missing.first() {
+            self.ui.status = tlf!("Cannot open {path}: the file was not found", path = first);
+        }
+        if !found.is_empty() {
+            self.import_paths(ctx, found, None);
+        }
+    }
+
     /// Take a drop over the Timeline while its own OS window is drawing. The dock's
     /// window fallback receives only files no more-specific target took.
     pub(crate) fn native_timeline_file_drop(&mut self, ui: &egui::Ui, rect: egui::Rect) {
