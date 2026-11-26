@@ -243,3 +243,26 @@ VA-API's. The rules above hold: `libnvcuvid.so.1` and `libcuda.so.1` are loaded 
 the one `nvenc::device` already retains for encoding. Unlike VA-API, NVDEC parses the stream
 itself; its callbacks run inside our parse call and never unwind into C (they record the first
 error and return 0, and the decoder then fails over to software like any other backend).
+
+## Addendum (2026-11-26): the Finder's open request on macOS (not media FFI)
+
+**This is an exception to "OS media FFI only" and needs the project owner's approval; it is
+proposed by the pull request that adds it.**
+
+macOS sends a double-clicked or Open With document to the running application as
+`application:openURLs:` on its delegate, not on the command line. winit installs a delegate that
+lacks the method and does not let the application replace it, so AppKit answers "FilmCraft cannot
+open files in the “FilmCraft Project” format" and the project does not open, although File ▸ Open
+(⌘O) loads the same file. Windows and Linux pass the file as an argument and are not affected.
+
+[`open_documents`](../../crates/platform/src/open_documents.rs) (macOS only,
+`#[allow(unsafe_code)]`) adds that one method to the class of the installed delegate, from the
+notification AppKit posts before it delivers the launch-time request. It has two `unsafe` blocks
+(`addObserverForName:…` and `class_addMethod`) plus one `transmute` of the method to `Imp`, each
+with a `// SAFETY:` comment. The method runs under `catch_unwind` (no panic unwinds into AppKit),
+takes file URLs only, and passes their decoded paths to a safe callback, which queues them for
+the UI (`filmcraft_ui_egui::os_open`). The public API is one safe function, `install`.
+
+Alternatives: the same method in the `storytold/winit` fork (no `unsafe` here, but a fork change
+and a `rev` bump in a PR of their own); or leaving macOS without Finder opening. If the fork gains
+the method, remove this module.

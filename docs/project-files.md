@@ -130,12 +130,14 @@ control channel, CLI and MCP. A request from the OS to a running app goes throug
 `filmcraft_ui_egui::os_open::request`.
 
 macOS does not start FilmCraft with the file on its command line: a double-click or Open With in
-the Finder sends an "open documents" event (`application:openURLs:`) to the app's delegate. The
-bundle declares the `.fcproj` type (`packaging/macos/Info.plist.in`), but the delegate that winit
-installs does not implement that method, so AppKit refuses the document and the Finder shows an
-error, while ⌘O, which never leaves the app, works. Until the host listens for the event and calls
-`os_open::request`, open a project from FilmCraft (⌘O, Open Recent) or drop it on the window or
-the Dock icon's window.
+the Finder sends an "open documents" request (`application:openURLs:`) to the app's delegate. The
+delegate that winit installs does not implement that method, so without more AppKit refuses the
+document ("FilmCraft cannot open files in the “FilmCraft Project” format") while ⌘O, which never
+leaves the app, works. `filmcraft_platform::open_documents` (macOS only, ADR 0001 addendum) adds
+the method; it passes the decoded paths to `os_open::request`, so a project opens the same way
+whether FilmCraft was closed (the request waits for the first frame) or running, and the files of
+a multi-file Open With are imported as a drop is. The bundle's `.fcproj` type is declared in
+`packaging/macos/Info.plist.in`. This path can only be tried in the packaged `.app`.
 
 ## Auto Save
 

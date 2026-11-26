@@ -217,6 +217,10 @@ fn main() -> eframe::Result {
     }
     // First, so the panic hook and every start-up record are logged (`logging`).
     let logger = logging::install();
+    // macOS sends a double-clicked or Open With project as an "open documents" request, not as an
+    // argument; it reaches the running app through `os_open` (docs/project-files.md).
+    #[cfg(target_os = "macos")]
+    filmcraft_platform::open_documents::install(filmcraft_ui_egui::os_open::request);
     // lossy, so a value that is not Unicode is reported like any other bad port instead of ignored
     // A Nightly start inherits no stable control server: the Launcher protocol has no per-launch
     // options, and a nightly must never share stable's socket or port.

@@ -34,6 +34,11 @@ filmcraft-time = { workspace = true }
 log = { workspace = true }
 
 [target.'cfg(target_os = "macos")'.dependencies]
+# open_documents: the Finder's open request (already in the lockfile through winit and the app)
+block2 = "0.6"
+objc2 = "0.6"
+objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "NSApplication", "NSResponder"] }
+objc2-foundation = { version = "0.3", default-features = false, features = ["std", "block2", "NSArray", "NSNotification", "NSOperation", "NSString", "NSURL"] }
 objc2-core-foundation = "0.3.2"
 objc2-core-media = "0.3.2"
 objc2-core-video = "0.3.2"
