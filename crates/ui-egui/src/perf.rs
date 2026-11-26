@@ -41,6 +41,23 @@ pub fn stats(app: &FilmcraftApp) -> Value {
             "submitMs": g.last_ms,
         })
     });
+    // GPU export rendering (process totals): frames composited on the GPU against frames the CPU
+    // renderer took over, and where the GPU frames spent their time. `mapWaitMs` is the wait for
+    // the picture to come back from the GPU, `convertMs` the CPU conversion of it afterwards.
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        let used = filmcraft_export::gpu_render_stats();
+        let t = filmcraft_gpu::export_renderer::timing::get();
+        let ms = |d: std::time::Duration| d.as_secs_f64() * 1e3;
+        v["exportGpu"] = json!({
+            "gpuFrames": used.frames,
+            "cpuFallbackFrames": used.fallbacks,
+            "submitMs": ms(t.submit),
+            "mapWaitMs": ms(t.map_wait),
+            "convertMs": ms(t.convert),
+            "frames": t.frames,
+        });
+    }
     // the Program monitor's picture against what is due: how far a drag or a scrub is ahead of it
     v["monitor"] = json!({
         "frame": app.program_picture().map(|k| k.frame),
